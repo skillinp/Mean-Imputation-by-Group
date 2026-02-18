@@ -16,11 +16,11 @@ library(knitr)
 opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
-## Purpose
+# Purpose
 
 This report runs a simple, defensible, group-wise mean imputation for missing genotypes from the 50K array. The goal is to impute within biologically coherent groups (UC, UF, Heirloom, Wild-by-species) so that the imputed values are based on relatives rather than the global mean. This is a pragmatic workflow: given the tiny amount of missing data, group-wise mean imputation is fast and usually sufficient. I save the fully imputed numeric matrix and a small metadata object for provenance.
 
-# Notes on inputs
+## Notes on inputs
 
 ./Geno Data/FinalGenotypeFile20251104.Rds : genotype matrix (samples x probes). Original coding is -1/0/1 and we convert to 0/1/2.
 
@@ -30,23 +30,23 @@ This report runs a simple, defensible, group-wise mean imputation for missing ge
 
 replace_synonyms.R : lab-specific helper for cleaning sample names and extracting Class/Species history.
 
-## Setup and load data
+# Setup and load data
 ```{r Setup and load data}
 library(dplyr)
 library(tibble)
 library(ggplot2)
 
 # Load inputs
-markerinfo <- readRDS("./FinalGenotypeFile20251104.Rds")
-annotUC <- readRDS("./DRAFT-10-15-2024-Final_Rosetta_istraw&50K&850K.Rds")
-annotUF <- read.table("./FaFB1_vf_pos.txt", header=TRUE, stringsAsFactors=FALSE)
+markerinfo <- readRDS("./Geno Data/FinalGenotypeFile20251104.Rds")
+annotUC <- readRDS("./Geno Data/DRAFT-10-15-2024-Final_Rosetta_istraw&50K&850K.Rds")
+annotUF <- read.table("./Geno Data/FaFB1_vf_pos.txt", header=TRUE, stringsAsFactors=FALSE)
 
 # Standardize sample names and history fields (lab function)
-source("../replace_synonyms.R")
+source("./replace_synonyms.R")
 
 ```
 
-## Annotation cleanup
+# Annotation cleanup
 
 We keep only probes on the 50K array in the UC Rosetta file and rename the UF columns before merging. UC defines the canonical probe list; UF supplies supplementary positions where available.
 
@@ -80,7 +80,7 @@ cat("Probes present in annotation but not in genotype:", length(setdiff(annot$Pr
 ```
 
 
-## Genotype prep
+# Genotype prep
 
 Convert -1/0/1 coding to 0/1/2, move sample names into a column, standardize sample IDs, and drop a few problematic samples we do not trust.
 ```{r Genotype prep}
@@ -102,7 +102,7 @@ rownames(geno) <- geno$Entry
 
 ```
 
-## Build the grouping table
+# Build the grouping table
 
 We will impute within the following groups:
 
@@ -137,7 +137,7 @@ print(table(samples_df$group))
 
 ```
 
-## Choose probe set and warn about extras
+# Choose probe set and warn about extras
 
 We use annot$Probe_ID as canonical probe list. If the genotype matrix has extra columns not in Rosetta we report them and ignore them for imputation.
 ```{r Choose probe set and warn about extras}
@@ -149,7 +149,7 @@ cat("Using", length(snp_cols), "SNPs for imputation.\n")
 
 ```
 
-## Group-wise mean imputation
+# Group-wise mean imputation
 
 Split the genotype matrix by group, compute means per SNP within each group, fill missing values with the group mean, and if a SNP is entirely missing in a group fall back to the global mean for that SNP.
 ```{r Group-wise mean imputation}
@@ -193,7 +193,7 @@ for(g in groups){
 
 ```
 
-## Reassemble and check
+# Reassemble and check
 
 Put the groups back in the original sample order, make a numeric matrix, and report NA counts before and after imputation.
 ```{r Reassemble and check}
@@ -215,18 +215,18 @@ if(total_NA_after > 0){
 
 ```
 
-## Save outputs
+# Save outputs
 
 Save the numeric imputed matrix and a small metadata object for provenance. Compression is used to keep files small.
 ```{r Save outputs}
 # Save the numeric imputed matrix for downstream use
 saveRDS(imputed_matrix,
-        "./FullyImputedGenotypes20260218_012encoding.Rds",
+        "./Geno Data/FullyImputedGenotypes20260218_012encoding.Rds",
         compress = "xz")
 
 # Save samples and annotation for provenance
 saveRDS(list(samples = samples_df, annotation = annot),
-        "./Imputation_metadata_20260218.Rds",
+        "./Geno Data/Imputation_metadata_20260218.Rds",
         compress = "xz")
 
 # Make the variable that later code expects
@@ -249,9 +249,9 @@ message("Found ", length_zero, " / ", total_snps, " SNPs with zero (or near-zero
 if(length_zero > 0){
   removed_snps <- colnames(geno_imp)[zero_var_idx]
   write.table(data.frame(Probe_ID = removed_snps),
-              file = "./removed_zero_variance_snps.tsv",
+              file = "./Geno Data/removed_zero_variance_snps.tsv",
               sep = "\t", row.names = FALSE, quote = FALSE)
-  message("Wrote ./removed_zero_variance_snps.tsv")
+  message("Wrote ./Geno Data/removed_zero_variance_snps.tsv")
 }
 
 if(length_zero == 0){
