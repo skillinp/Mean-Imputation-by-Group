@@ -234,7 +234,7 @@ geno_imp <- imputed_matrix
 
 ```
 
-## Remove monomorphic SNPs and run a diagnostic PCA
+# Remove monomorphic SNPs and run a diagnostic PCA
 
 PCA cannot scale constant columns, so remove SNPs with zero or near-zero variance. This PCA is only a quick sanity check, not required for downstream imputation work.
 
