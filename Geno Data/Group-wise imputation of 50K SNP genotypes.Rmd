@@ -1,0 +1,278 @@
+---
+title: "Group-wise imputation of 50K SNP genotypes"
+author: "Paul Skillin"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: false
+    fig_width: 7
+    fig_height: 5
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Purpose
+
+This report runs a simple, defensible, group-wise mean imputation for missing genotypes from the 50K array. The goal is to impute within biologically coherent groups (UC, UF, Heirloom, Wild-by-species) so that the imputed values are based on relatives rather than the global mean. This is a pragmatic workflow: given the tiny amount of missing data, group-wise mean imputation is fast and usually sufficient. I save the fully imputed numeric matrix and a small metadata object for provenance.
+
+# Notes on inputs
+
+./Geno Data/FinalGenotypeFile20251104.Rds : genotype matrix (samples x probes). Original coding is -1/0/1 and we convert to 0/1/2.
+
+./Geno Data/DRAFT-10-15-2024-Final_Rosetta_istraw&50K&850K.Rds : UC Rosetta annotation - we will restrict to probes on the 50K array.
+
+./Geno Data/FaFB1_vf_pos.txt : UF/Brilliance probe positions from Mark.
+
+replace_synonyms.R : lab-specific helper for cleaning sample names and extracting Class/Species history.
+
+## Setup and load data
+```{r Setup and load data}
+library(dplyr)
+library(tibble)
+library(ggplot2)
+
+# Load inputs
+markerinfo <- readRDS("./FinalGenotypeFile20251104.Rds")
+annotUC <- readRDS("./DRAFT-10-15-2024-Final_Rosetta_istraw&50K&850K.Rds")
+annotUF <- read.table("./FaFB1_vf_pos.txt", header=TRUE, stringsAsFactors=FALSE)
+
+# Standardize sample names and history fields (lab function)
+source("../replace_synonyms.R")
+
+```
+
+## Annotation cleanup
+
+We keep only probes on the 50K array in the UC Rosetta file and rename the UF columns before merging. UC defines the canonical probe list; UF supplies supplementary positions where available.
+
+```{r Annotation cleanup}
+# Keep only 50K probes from UC Rosetta
+annotUC <- annotUC %>% filter(On_50K_Array != "")
+annotUC$On_850K_Array <- NULL
+annotUC$On_35k_90K_Arrays <- NULL
+
+# Rename UF columns for clarity before joining
+annotUF <- annotUF %>%
+  rename(
+    UF_Chromosome = mappedTo,
+    UF_bp = pos,
+    UF_note = notes
+  )
+
+# Left-join: keep all UC probes, add UF coordinates where present
+annot <- annotUC %>%
+  left_join(annotUF, by = c("Probe_ID" = "SNP_ID"))
+
+# Quick checks (printed in HTML)
+cat("Probes in UC but not found in UF (first 10):\n")
+print(head(setdiff(annotUC$Probe_ID, annotUF$SNP_ID), 10))
+cat("Count of UC probes not in UF:", length(setdiff(annotUC$Probe_ID, annotUF$SNP_ID)), "\n\n")
+
+geno_snps <- colnames(markerinfo)
+cat("Probes present in genotype but not in annotation:", length(setdiff(geno_snps, annot$Probe_ID)), "\n")
+cat("Probes present in annotation but not in genotype:", length(setdiff(annot$Probe_ID, geno_snps)), "\n")
+
+```
+
+
+## Genotype prep
+
+Convert -1/0/1 coding to 0/1/2, move sample names into a column, standardize sample IDs, and drop a few problematic samples we do not trust.
+```{r Genotype prep}
+# Shift coding -1/0/1 -> 0/1/2
+geno <- markerinfo + 1
+
+# Move rownames to Entry column so replace_synonyms can run
+geno <- geno %>% as.data.frame() %>% rownames_to_column("Entry")
+
+# Standardize sample names (lab function)
+geno <- replace_synonyms(geno, "Entry", type = "entry")
+
+# Drop samples we do not trust
+UC_Problems <- c("20B251P105", "20B251P029", "20C420P052", "72C501P002")
+geno <- geno %>% filter(!Entry %in% UC_Problems)
+
+# Set rownames for convenience
+rownames(geno) <- geno$Entry
+
+```
+
+## Build the grouping table
+
+We will impute within the following groups:
+
+University of California
+
+University of Florida
+
+Heirloom
+
+Wild_Fragaria_chiloensis
+
+Wild_Fragaria_virginiana
+
+If a sample is labeled Wild we subdivide by species. Also force Yasmin into the UF group because of its breeding history.
+
+```{r Build the grouping table}
+# Add Class and Species history using the lab helper
+geno <- replace_synonyms(geno, "Entry", type = "history", history_col = "Class", collapse_history = NA)
+geno <- replace_synonyms(geno, "Entry", type = "history", history_col = "Species", collapse_history = NA)
+
+samples_df <- data.frame(
+  sample = geno$Entry,
+  group  = ifelse(geno$Class == "Wild", paste(geno$Species), geno$Class),
+  stringsAsFactors = FALSE
+)
+
+# Force Yasmin into UF
+samples_df$group[samples_df$sample == "Yasmin"] <- "University of Florida"
+
+# Show group sizes
+print(table(samples_df$group))
+
+```
+
+## Choose probe set and warn about extras
+
+We use annot$Probe_ID as canonical probe list. If the genotype matrix has extra columns not in Rosetta we report them and ignore them for imputation.
+```{r Choose probe set and warn about extras}
+snp_cols <- intersect(colnames(geno), annot$Probe_ID)
+if(length(snp_cols) == 0) stop("No SNP columns found in geno that match annot$Probe_ID. Check names.")
+extra_snps <- setdiff(colnames(geno)[colnames(geno) != "Entry"], snp_cols)
+if(length(extra_snps) > 0) message("Warning: ", length(extra_snps), " columns in genotype file not found in Rosetta; they will be ignored here.")
+cat("Using", length(snp_cols), "SNPs for imputation.\n")
+
+```
+
+## Group-wise mean imputation
+
+Split the genotype matrix by group, compute means per SNP within each group, fill missing values with the group mean, and if a SNP is entirely missing in a group fall back to the global mean for that SNP.
+```{r Group-wise mean imputation}
+# Prepare structures
+groups <- unique(samples_df$group)
+group_indices <- lapply(groups, function(g) which(samples_df$group == g))
+names(group_indices) <- groups
+
+geno_mat_all <- data.matrix(geno[, snp_cols, drop = FALSE])  # numeric matrix samples x SNPs
+global_means <- colMeans(geno_mat_all, na.rm = TRUE)
+
+imputed_list <- vector("list", length(groups))
+names(imputed_list) <- groups
+
+for(g in groups){
+  idx <- group_indices[[g]]
+  sub_df <- geno[idx, c("Entry", snp_cols), drop = FALSE]
+  sub_mat <- data.matrix(sub_df[, snp_cols, drop = FALSE])
+
+  group_means <- colMeans(sub_mat, na.rm = TRUE)
+  nan_cols <- which(is.nan(group_means) | is.na(group_means))
+
+  nas_loc <- which(is.na(sub_mat), arr.ind = TRUE)
+  if(nrow(nas_loc) > 0){
+    for(k in seq_len(nrow(nas_loc))){
+      r <- nas_loc[k,1]; c <- nas_loc[k,2]
+      if(!(c %in% nan_cols)){
+        sub_mat[r, c] <- group_means[c]
+      } else {
+        sub_mat[r, c] <- global_means[c]
+      }
+    }
+  }
+
+  # Keep original probe names; set names explicitly to avoid R's syntactic conversion
+  imputed_list[[g]] <- data.frame(Entry = sub_df$Entry,
+                                  as.data.frame(sub_mat, stringsAsFactors = FALSE),
+                                  check.names = FALSE, stringsAsFactors = FALSE)
+  colnames(imputed_list[[g]]) <- c("Entry", snp_cols)
+}
+
+```
+
+## Reassemble and check
+
+Put the groups back in the original sample order, make a numeric matrix, and report NA counts before and after imputation.
+```{r Reassemble and check}
+imputed_combined <- do.call(rbind, imputed_list)
+imputed_combined <- imputed_combined[match(geno$Entry, imputed_combined$Entry), ]
+stopifnot(all(imputed_combined$Entry == geno$Entry))
+
+imputed_matrix <- data.matrix(imputed_combined[, snp_cols, drop = FALSE])
+rownames(imputed_matrix) <- imputed_combined$Entry
+
+total_NA_before <- sum(is.na(geno_mat_all))
+total_NA_after  <- sum(is.na(imputed_matrix))
+message("Total NA before imputation: ", total_NA_before)
+message("Total NA after group-wise imputation: ", total_NA_after)
+if(total_NA_after > 0){
+  message("Top 10 SNPs by remaining NA count:")
+  print(head(sort(colSums(is.na(imputed_matrix)), decreasing = TRUE), 10))
+}
+
+```
+
+## Save outputs
+
+Save the numeric imputed matrix and a small metadata object for provenance. Compression is used to keep files small.
+```{r Save outputs}
+# Save the numeric imputed matrix for downstream use
+saveRDS(imputed_matrix,
+        "./FullyImputedGenotypes20260218_012encoding.Rds",
+        compress = "xz")
+
+# Save samples and annotation for provenance
+saveRDS(list(samples = samples_df, annotation = annot),
+        "./Imputation_metadata_20260218.Rds",
+        compress = "xz")
+
+# Make the variable that later code expects
+geno_imp <- imputed_matrix
+
+```
+
+## Remove monomorphic SNPs and run a diagnostic PCA
+
+PCA cannot scale constant columns, so remove SNPs with zero or near-zero variance. This PCA is only a quick sanity check, not required for downstream imputation work.
+
+```{r Remove monomorphic SNPs and run a diagnostic PCA}
+snp_var <- apply(geno_imp, 2, var, na.rm = TRUE)
+eps <- 1e-12
+zero_var_idx <- which(is.na(snp_var) | snp_var <= eps)
+length_zero <- length(zero_var_idx)
+total_snps <- ncol(geno_imp)
+message("Found ", length_zero, " / ", total_snps, " SNPs with zero (or near-zero) variance.")
+
+if(length_zero > 0){
+  removed_snps <- colnames(geno_imp)[zero_var_idx]
+  write.table(data.frame(Probe_ID = removed_snps),
+              file = "./removed_zero_variance_snps.tsv",
+              sep = "\t", row.names = FALSE, quote = FALSE)
+  message("Wrote ./removed_zero_variance_snps.tsv")
+}
+
+if(length_zero == 0){
+  geno_imp_filt <- geno_imp
+} else {
+  keep_idx <- setdiff(seq_len(ncol(geno_imp)), zero_var_idx)
+  geno_imp_filt <- geno_imp[, keep_idx, drop = FALSE]
+  message("Keeping ", ncol(geno_imp_filt), " SNPs for PCA.")
+}
+
+# PCA (diagnostic)
+pca <- prcomp(scale(geno_imp_filt), center = TRUE, retx = TRUE)
+
+pc_df <- data.frame(sample = rownames(geno_imp_filt),
+                    PC1 = pca$x[,1],
+                    PC2 = pca$x[,2],
+                    group = samples_df$group,
+                    stringsAsFactors = FALSE)
+
+ggplot(pc_df, aes(PC1, PC2, color = group)) +
+  geom_point(alpha = 0.8) + theme_minimal() + labs(title = "PCA (after removing zero-variance SNPs)")
+
+```
+
