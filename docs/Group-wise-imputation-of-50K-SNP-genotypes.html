@@ -359,10 +359,11 @@ genotypes</h1>
 
 <div id="TOC">
 <ul>
-<li><a href="#purpose" id="toc-purpose">Purpose</a></li>
-<li><a href="#notes-on-inputs" id="toc-notes-on-inputs">Notes on
-inputs</a>
+<li><a href="#purpose" id="toc-purpose">Purpose</a>
 <ul>
+<li><a href="#notes-on-inputs" id="toc-notes-on-inputs">Notes on
+inputs</a></li>
+</ul></li>
 <li><a href="#setup-and-load-data" id="toc-setup-and-load-data">Setup
 and load data</a></li>
 <li><a href="#annotation-cleanup" id="toc-annotation-cleanup">Annotation
@@ -374,15 +375,16 @@ prep</a></li>
 warn about extras</a></li>
 <li><a href="#group-wise-mean-imputation" id="toc-group-wise-mean-imputation">Group-wise mean imputation</a></li>
 <li><a href="#reassemble-and-check" id="toc-reassemble-and-check">Reassemble and check</a></li>
-<li><a href="#save-outputs" id="toc-save-outputs">Save outputs</a></li>
+<li><a href="#save-outputs" id="toc-save-outputs">Save outputs</a>
+<ul>
 <li><a href="#remove-monomorphic-snps-and-run-a-diagnostic-pca" id="toc-remove-monomorphic-snps-and-run-a-diagnostic-pca">Remove
 monomorphic SNPs and run a diagnostic PCA</a></li>
 </ul></li>
 </ul>
 </div>
 
-<div id="purpose" class="section level2">
-<h2>Purpose</h2>
+<div id="purpose" class="section level1">
+<h1>Purpose</h1>
 <p>This report runs a simple, defensible, group-wise mean imputation for
 missing genotypes from the 50K array. The goal is to impute within
 biologically coherent groups (UC, UF, Heirloom, Wild-by-species) so that
@@ -391,9 +393,8 @@ This is a pragmatic workflow: given the tiny amount of missing data,
 group-wise mean imputation is fast and usually sufficient. I save the
 fully imputed numeric matrix and a small metadata object for
 provenance.</p>
-</div>
-<div id="notes-on-inputs" class="section level1">
-<h1>Notes on inputs</h1>
+<div id="notes-on-inputs" class="section level2">
+<h2>Notes on inputs</h2>
 <p>./Geno Data/FinalGenotypeFile20251104.Rds : genotype matrix (samples
 x probes). Original coding is -1/0/1 and we convert to 0/1/2.</p>
 <p>./Geno
@@ -403,22 +404,24 @@ Rosetta annotation - we will restrict to probes on the 50K array.</p>
 Mark.</p>
 <p>replace_synonyms.R : lab-specific helper for cleaning sample names
 and extracting Class/Species history.</p>
-<div id="setup-and-load-data" class="section level2">
-<h2>Setup and load data</h2>
+</div>
+</div>
+<div id="setup-and-load-data" class="section level1">
+<h1>Setup and load data</h1>
 <pre class="r"><code>library(dplyr)
 library(tibble)
 library(ggplot2)
 
 # Load inputs
-markerinfo &lt;- readRDS(&quot;./FinalGenotypeFile20251104.Rds&quot;)
-annotUC &lt;- readRDS(&quot;./DRAFT-10-15-2024-Final_Rosetta_istraw&amp;50K&amp;850K.Rds&quot;)
-annotUF &lt;- read.table(&quot;./FaFB1_vf_pos.txt&quot;, header=TRUE, stringsAsFactors=FALSE)
+markerinfo &lt;- readRDS(&quot;./Geno Data/FinalGenotypeFile20251104.Rds&quot;)
+annotUC &lt;- readRDS(&quot;./Geno Data/DRAFT-10-15-2024-Final_Rosetta_istraw&amp;50K&amp;850K.Rds&quot;)
+annotUF &lt;- read.table(&quot;./Geno Data/FaFB1_vf_pos.txt&quot;, header=TRUE, stringsAsFactors=FALSE)
 
 # Standardize sample names and history fields (lab function)
-source(&quot;../replace_synonyms.R&quot;)</code></pre>
+source(&quot;./replace_synonyms.R&quot;)</code></pre>
 </div>
-<div id="annotation-cleanup" class="section level2">
-<h2>Annotation cleanup</h2>
+<div id="annotation-cleanup" class="section level1">
+<h1>Annotation cleanup</h1>
 <p>We keep only probes on the 50K array in the UC Rosetta file and
 rename the UF columns before merging. UC defines the canonical probe
 list; UF supplies supplementary positions where available.</p>
@@ -453,8 +456,8 @@ cat(&quot;Probes present in genotype but not in annotation:&quot;, length(setdif
 <pre class="r"><code>cat(&quot;Probes present in annotation but not in genotype:&quot;, length(setdiff(annot$Probe_ID, geno_snps)), &quot;\n&quot;)</code></pre>
 <pre><code>## Probes present in annotation but not in genotype: 0</code></pre>
 </div>
-<div id="genotype-prep" class="section level2">
-<h2>Genotype prep</h2>
+<div id="genotype-prep" class="section level1">
+<h1>Genotype prep</h1>
 <p>Convert -1/0/1 coding to 0/1/2, move sample names into a column,
 standardize sample IDs, and drop a few problematic samples we do not
 trust.</p>
@@ -475,8 +478,8 @@ geno &lt;- geno %&gt;% filter(!Entry %in% UC_Problems)
 # Set rownames for convenience
 rownames(geno) &lt;- geno$Entry</code></pre>
 </div>
-<div id="build-the-grouping-table" class="section level2">
-<h2>Build the grouping table</h2>
+<div id="build-the-grouping-table" class="section level1">
+<h1>Build the grouping table</h1>
 <p>We will impute within the following groups:</p>
 <p>University of California</p>
 <p>University of Florida</p>
@@ -509,8 +512,8 @@ print(table(samples_df$group))</code></pre>
 ## University of California    University of Florida 
 ##                      296                      104</code></pre>
 </div>
-<div id="choose-probe-set-and-warn-about-extras" class="section level2">
-<h2>Choose probe set and warn about extras</h2>
+<div id="choose-probe-set-and-warn-about-extras" class="section level1">
+<h1>Choose probe set and warn about extras</h1>
 <p>We use annot$Probe_ID as canonical probe list. If the genotype matrix
 has extra columns not in Rosetta we report them and ignore them for
 imputation.</p>
@@ -521,8 +524,8 @@ if(length(extra_snps) &gt; 0) message(&quot;Warning: &quot;, length(extra_snps),
 cat(&quot;Using&quot;, length(snp_cols), &quot;SNPs for imputation.\n&quot;)</code></pre>
 <pre><code>## Using 49355 SNPs for imputation.</code></pre>
 </div>
-<div id="group-wise-mean-imputation" class="section level2">
-<h2>Group-wise mean imputation</h2>
+<div id="group-wise-mean-imputation" class="section level1">
+<h1>Group-wise mean imputation</h1>
 <p>Split the genotype matrix by group, compute means per SNP within each
 group, fill missing values with the group mean, and if a SNP is entirely
 missing in a group fall back to the global mean for that SNP.</p>
@@ -564,8 +567,8 @@ for(g in groups){
   colnames(imputed_list[[g]]) &lt;- c(&quot;Entry&quot;, snp_cols)
 }</code></pre>
 </div>
-<div id="reassemble-and-check" class="section level2">
-<h2>Reassemble and check</h2>
+<div id="reassemble-and-check" class="section level1">
+<h1>Reassemble and check</h1>
 <p>Put the groups back in the original sample order, make a numeric
 matrix, and report NA counts before and after imputation.</p>
 <pre class="r"><code>imputed_combined &lt;- do.call(rbind, imputed_list)
@@ -584,23 +587,22 @@ if(total_NA_after &gt; 0){
   print(head(sort(colSums(is.na(imputed_matrix)), decreasing = TRUE), 10))
 }</code></pre>
 </div>
-<div id="save-outputs" class="section level2">
-<h2>Save outputs</h2>
+<div id="save-outputs" class="section level1">
+<h1>Save outputs</h1>
 <p>Save the numeric imputed matrix and a small metadata object for
 provenance. Compression is used to keep files small.</p>
 <pre class="r"><code># Save the numeric imputed matrix for downstream use
 saveRDS(imputed_matrix,
-        &quot;./FullyImputedGenotypes20260218_012encoding.Rds&quot;,
+        &quot;./Geno Data/FullyImputedGenotypes20260218_012encoding.Rds&quot;,
         compress = &quot;xz&quot;)
 
 # Save samples and annotation for provenance
 saveRDS(list(samples = samples_df, annotation = annot),
-        &quot;./Imputation_metadata_20260218.Rds&quot;,
+        &quot;./Geno Data/Imputation_metadata_20260218.Rds&quot;,
         compress = &quot;xz&quot;)
 
 # Make the variable that later code expects
 geno_imp &lt;- imputed_matrix</code></pre>
-</div>
 <div id="remove-monomorphic-snps-and-run-a-diagnostic-pca" class="section level2">
 <h2>Remove monomorphic SNPs and run a diagnostic PCA</h2>
 <p>PCA cannot scale constant columns, so remove SNPs with zero or
@@ -616,9 +618,9 @@ message(&quot;Found &quot;, length_zero, &quot; / &quot;, total_snps, &quot; SNP
 if(length_zero &gt; 0){
   removed_snps &lt;- colnames(geno_imp)[zero_var_idx]
   write.table(data.frame(Probe_ID = removed_snps),
-              file = &quot;./removed_zero_variance_snps.tsv&quot;,
+              file = &quot;./Geno Data/removed_zero_variance_snps.tsv&quot;,
               sep = &quot;\t&quot;, row.names = FALSE, quote = FALSE)
-  message(&quot;Wrote ./removed_zero_variance_snps.tsv&quot;)
+  message(&quot;Wrote ./Geno Data/removed_zero_variance_snps.tsv&quot;)
 }
 
 if(length_zero == 0){
