@@ -94,8 +94,8 @@ geno <- geno %>% as.data.frame() %>% rownames_to_column("Entry")
 geno <- replace_synonyms(geno, "Entry", type = "entry")
 
 # Drop samples we do not trust
-UC_Problems <- c("20B251P105", "20B251P029", "20C420P052", "72C501P002")
-geno <- geno %>% filter(!Entry %in% UC_Problems)
+Problem_Samples <- c("20B251P105", "20B251P029", "20C420P052", "72C501P002")
+geno <- geno %>% filter(!Entry %in% Problem_Samples)
 
 # Set rownames for convenience
 rownames(geno) <- geno$Entry
@@ -110,13 +110,14 @@ University of California
 
 University of Florida
 
-Heirloom
+Heirloom (non UC or UF)
 
-Wild_Fragaria_chiloensis
+Wild: Fragaria chiloensis
 
-Wild_Fragaria_virginiana
+Wild: Fragaria virginiana
 
-If a sample is labeled Wild we subdivide by species. Also force Yasmin into the UF group because of its breeding history.
+
+If a sample is labeled Wild we subdivide by species. Also we place Yasmin into the UF group because of its breeding history.
 
 ```{r Build the grouping table}
 # Add Class and Species history using the lab helper

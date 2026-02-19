@@ -11,7 +11,7 @@
 
 <meta name="author" content="Paul Skillin" />
 
-<meta name="date" content="2026-02-18" />
+<meta name="date" content="2026-02-19" />
 
 <title>Group-wise imputation of 50K SNP genotypes</title>
 
@@ -353,7 +353,7 @@ display: none;
 <h1 class="title toc-ignore">Group-wise imputation of 50K SNP
 genotypes</h1>
 <h4 class="author">Paul Skillin</h4>
-<h4 class="date">2026-02-18</h4>
+<h4 class="date">2026-02-19</h4>
 
 </div>
 
@@ -470,8 +470,8 @@ geno &lt;- replace_synonyms(geno, &quot;Entry&quot;, type = &quot;entry&quot;)</
 <pre><code>## Processed 488 total values (488 non-blank candidates).
 ## Synonyms mode (&#39;entry&#39;): Replaced: 488. Kept (no match): 0. Replaced -&gt; NA: 0.</code></pre>
 <pre class="r"><code># Drop samples we do not trust
-UC_Problems &lt;- c(&quot;20B251P105&quot;, &quot;20B251P029&quot;, &quot;20C420P052&quot;, &quot;72C501P002&quot;)
-geno &lt;- geno %&gt;% filter(!Entry %in% UC_Problems)
+Problem_Samples &lt;- c(&quot;20B251P105&quot;, &quot;20B251P029&quot;, &quot;20C420P052&quot;, &quot;72C501P002&quot;)
+geno &lt;- geno %&gt;% filter(!Entry %in% Problem_Samples)
 
 # Set rownames for convenience
 rownames(geno) &lt;- geno$Entry</code></pre>
@@ -481,10 +481,10 @@ rownames(geno) &lt;- geno$Entry</code></pre>
 <p>We will impute within the following groups:</p>
 <p>University of California</p>
 <p>University of Florida</p>
-<p>Heirloom</p>
-<p>Wild_Fragaria_chiloensis</p>
-<p>Wild_Fragaria_virginiana</p>
-<p>If a sample is labeled Wild we subdivide by species. Also force
+<p>Heirloom (non UC or UF)</p>
+<p>Wild: Fragaria chiloensis</p>
+<p>Wild: Fragaria virginiana</p>
+<p>If a sample is labeled Wild we subdivide by species. Also we place
 Yasmin into the UF group because of its breeding history.</p>
 <pre class="r"><code># Add Class and Species history using the lab helper
 geno &lt;- replace_synonyms(geno, &quot;Entry&quot;, type = &quot;history&quot;, history_col = &quot;Class&quot;, collapse_history = NA)</code></pre>
